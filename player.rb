@@ -58,7 +58,7 @@ class Player
       move_toward_safe_space!
     elsif space.wall?
       # Hit a wall, switch direction and retry
-      switch_direction!
+      reverse_direction!
       perform_action!(warrior)
     else
       puts "Weird space: #{space.inspect}"
@@ -66,19 +66,10 @@ class Player
     end
   end
 
-  # Is this space safe to rest in?
-  # Note that it doesn't take into account whether the warrior is taking
-  # damage.
-  def in_safe_space?
-    # No enemy in any direction
-    (not DIRECTIONS.any? { |dir| @warrior.feel(dir).enemy? }) and
-      not taking_damage
-  end
+  # STATE CHANGERS
 
-  # Should the warrior rest?
-  def should_rest?
-    # No need to rest when we're about to clear the level
-    low_on_health? and not @warrior.feel(direction).stairs?
+  def reverse_direction!
+    @direction = (direction == :forward ? :backward : :forward)
   end
 
   # Moves warrior toward a safe space
@@ -86,10 +77,47 @@ class Player
     puts "Moving toward safe space"
     #if taking_damage_from_afar? and should_rest?
       # Move away from threat
-      switch_direction!
-      @warrior.walk!
+      reverse_direction!
+      @warrior.walk!(direction)
     #end
   end
+
+  ## TESTERS
+
+  # Is this space safe to rest in?
+  # Note that it doesn't take into account whether the warrior is taking
+  # damage.
+  def in_safe_space?
+    not taking_damage? and not next_to_enemy?
+  end
+
+  # Should the warrior rest? Note that this doesn't take into account
+  # whether it's safe for the warrior to rest, it just recommends that he
+  # should.
+  def should_rest?
+    # No need to rest when we're about to clear the level
+    low_on_health? and not @warrior.feel(direction).stairs?
+  end
+
+  # Is an enemy in an adjacent space?
+  def next_to_enemy?
+    DIRECTIONS.any? { |dir| @warrior.feel(dir).enemy? }
+  end
+
+  def taking_damage?
+    current_health < @previous_health
+  end
+
+  def taking_damage_from_afar?
+    taking_damage? and not next_to_enemy?
+  end
+
+  def low_on_health?
+    percent_health = (current_health.to_f / MAX_HEALTH) * 100
+    percent_health < MINIMUM_PERCENT_HEALTH
+  end
+
+  # ACCESSORS
 
   def current_health
     @warrior.health
@@ -99,25 +127,8 @@ class Player
     @current_turn ||= 1
   end
 
-  def taking_damage?
-    current_health < @previous_health
-  end
-
-  def taking_damage_from_afar?
-    taking_damage? and not DIRECTIONS.any?{|d| @warrior.feel(d).enemy? }
-  end
-
-  def low_on_health?
-    percent_health = (current_health.to_f / MAX_HEALTH) * 100
-    percent_health < MINIMUM_PERCENT_HEALTH
-  end
-
   # Get direction warrior is walking in. Defaults to :backward.
   def direction
     @direction ||= :backward
-  end
-
-  def switch_direction!
-    @direction = (direction == :forward ? :backward : :forward)
   end
 end
