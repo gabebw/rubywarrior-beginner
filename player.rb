@@ -1,22 +1,25 @@
 class Player
   MAX_HEALTH = 20
+  # How much damage the warrior does per turn
+  DAMAGE_DEALT = 5
   # When we have less than this % health, rest (unless we're not in a safe
   # space)
-  MINIMUM_PERCENT_HEALTH = 70
-  ENEMY_HEALTH = {:thick_sludge => 24,
-                  :archer => 7 }
-  # Yay, Ruby 1.9! Yes, I'm using a lambda only so it takes up less space.
-  AVG_ENEMY_HEALTH = ->(v){v.inject{|acc,x|acc+x}/v.size.to_f}.call(ENEMY_HEALTH.values)
+  MINIMUM_PERCENT_HEALTH = 50
+  ENEMY = {:S => {:health => 24, :damage => 3},
+           :a => {:health => 7, :damage => 3}}
   DIRECTIONS = [:forward, :backward]
 
   def play_turn(warrior)
+    # warrior.action returns [:latest_action, :direction_it_was_performed]
     @warrior = warrior
     @previous_health ||= current_health
+    @previous_space ||= current_location
 
     perform_action!(warrior)
 
-    # Set @previous_health for next turn
+    # Set variables for next turn
     @previous_health = current_health
+    @previous_location = current_location
   end
 
   # Performs a bang-action, e.g. walk!
@@ -46,10 +49,14 @@ class Player
     # it
     if space.stairs? and space.empty?
       warrior.walk!(direction)
+    elsif current_location == [1, 0] and warrior.feel(:backward).empty?
+      # Nothing more to do here
+      @direction = :forward
+      warrior.walk!(direction)
     elsif should_rest?
       if in_safe_space?
         # Regain some health
-        mark_safe_space!
+        mark_safe_location!
         warrior.rest!
       else
         puts "Should rest, but not in safe space. Moving towards it."
@@ -58,12 +65,12 @@ class Player
     elsif space.captive?
       warrior.rescue!(direction)
     elsif space.enemy?
-      set_most_recent_enemy_direction!
+      location_of_closest_enemy = space.location
       warrior.attack!(direction)
     elsif space.empty?
       # May have just moved away from an enemy, so check if we should
       # re-engage.
-      if direction_of_most_recent_enemy.nil?
+      if location_of_closest_enemy.nil?
         # No enemies, blithely continue
         warrior.walk!(direction)
       else
@@ -71,7 +78,6 @@ class Player
       end
     elsif taking_damage_from_afar? and should_rest?
       puts "Should move away from threat"
-      set_most_recent_enemy_direction!
       # Move away from threat
       move_toward_safe_space!
     elsif space.wall?
@@ -79,7 +85,7 @@ class Player
       reverse_direction!
       perform_action!(warrior)
     else
-      puts "Weird space: #{space.inspect}"
+      puts "!!! Weird space: #{space.inspect}"
       warrior.walk!(direction)
     end
   end
@@ -95,40 +101,22 @@ class Player
     puts "Moving toward safe space"
     if taking_damage_from_afar? and should_rest?
       # Move away from threat
-      @direction = opposite_direction_of(direction_of_most_recent_enemy)
+      @direction = away_from(location_of_closest_enemy)
     else
       reverse_direction!
     end
     @warrior.walk!(direction)
   end
 
-  # Returns direction of most recent enemy that the warrior engaged (or just
-  # took damage from), or nil if the warrior has yet to encounter an enemy
-  def direction_of_most_recent_enemy
-    #@direction_of_most_recent_enemy ||= direction
-    # Default to nil so we can tell when we have yet to engage an enemy
-    @direction_of_most_recent_enemy ||= nil
-  end
-
-  # Set the direction of the most recent enemy to the current direction.
-  # Only called when warrior is engaging an enemy (or just taking damage
-  # from it).
-  def set_most_recent_enemy_direction!
-    @direction_of_most_recent_enemy = direction
-  end
-
   def move_toward_most_recent_enemy!
-    @direction = direction_of_most_recent_enemy
+    @direction = towards(location_of_closest_enemy)
     @warrior.walk!(direction)
   end
 
-  # Mark the current space as safe
-  def mark_safe_space!
-    @safe_spaces ||= []
-    backward = @warrior.feel(:backward)
-    x_coord = backward[0] + 1
-    y_coord = backward[1] + 1
-    @safe_spaces << [x_coord, y_coord]
+  # Mark the current location as safe
+  def mark_safe_location!
+    @safe_locations ||= []
+    @safe_locations << current_location unless @safe_locations.include?(current_location)
   end
 
   ## TESTERS
@@ -138,6 +126,11 @@ class Player
   # damage.
   def in_safe_space?
     not taking_damage? and not next_to_enemy?
+  end
+
+  # Is a given location safe?
+  def is_safe_location?(location)
+    @safe_locations.include?(location)
   end
 
   # Should the warrior rest? Note that this doesn't take into account
@@ -161,6 +154,11 @@ class Player
     taking_damage? and not next_to_enemy?
   end
 
+  # Did we just start taking damage this turn?
+  def just_started_taking_damage?
+    taking_damage? and is_safe_location?(@previous_location)
+  end
+
   def low_on_health?
     percent_health = (current_health.to_f / MAX_HEALTH) * 100
     percent_health < MINIMUM_PERCENT_HEALTH
@@ -181,11 +179,70 @@ class Player
     @direction ||= :backward
   end
 
+  # Returns direction of most recent enemy that the warrior engaged (or just
+  # took damage from), or nil if the warrior has yet to encounter an enemy
+  #def direction_of_most_recent_enemy
+    # Default to nil so we can tell when we have yet to engage an enemy
+  #  @direction_of_most_recent_enemy ||= nil
+  #end
+
+  def current_location
+    backward = @warrior.feel(:backward).location
+    x_coord = backward[0] + 1
+    y_coord = backward[1]
+    [x_coord, y_coord]
+  end
+
+  def location_of_closest_enemy=(location)
+    @enemy_location = location
+  endk
+
   # UTILITY
   def opposite_direction_of(dir)
     case dir
     when :forward then :backward
     when :backward then :forward
     end
+  end
+
+  # Pass in an enemy character, like "S", to determine how many turns it
+  # will take to kill it
+  def turns_required_to_beat(enemy)
+    enemy = enemy.to_sym
+    (ENEMY[enemy][:health].to_f / DAMAGE_DEALT).ceil
+  end
+
+  # Do we have enough health to engage in battle?
+  def healthy_enough_to_beat?(enemy)
+    turns = turns_required_to_beat(enemy)
+    predicted_damage_taken = turns * ENEMY[enemy][:damage]
+    predicted_damage_taken < current_health
+  end
+
+  # Returns location of closest enemy. May be nil.
+  def location_of_closest_enemy
+    @enemy_location ||= nil
+    x,y = current_location
+    if taking_damage?
+      dir = DIRECTIONS.detect?{|d| @warrior.feel(d).enemy? }
+      @enemy_location = @warrior.feel(dir).location
+    elsif taking_damage_from_afar? and just_started_taking_damage?
+      # Archer is shooting at us. They have a range of 2 squares.
+      # i.e. |@  a| is sufficient
+      @enemy_location = [x+3, y]
+    end
+    @enemy_location
+  end
+
+  # Returns a direction that will bring the warrior closer to the given location.
+  def towards(location)
+    target_x, target_y = location
+    current_x, current_y = current_location
+    current_x > target_x ? :backward : :forward
+  end
+
+  # Returns a direction that will bring the warrior farther away from the given location.
+  def away_from(location)
+    opposite_direction_of(towards(location)
   end
 end
