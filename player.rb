@@ -8,7 +8,9 @@ class Player
     @previous_health ||= current_health
     taking_damage = (current_health < @previous_health)
     space = warrior.feel
-    if space.stairs?
+
+    # Stairs may not be empty
+    if space.stairs? and space.empty?
       warrior.walk!
     elsif space.captive?
       warrior.rescue!
