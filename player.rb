@@ -217,7 +217,7 @@ class Player
     @enemy_location ||= nil
     x,y = current_location
     if taking_damage?
-      dir = DIRECTIONS.detect?{|d| @warrior.feel(d).enemy? }
+      dir = DIRECTIONS.detect{|d| @warrior.feel(d).enemy? }
       @enemy_location = @warrior.feel(dir).location
     elsif taking_damage_from_afar? and just_started_taking_damage?
       # Archer is shooting at us. They have a range of 2 squares.
