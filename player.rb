@@ -65,12 +65,12 @@ class Player
     elsif space.captive?
       warrior.rescue!(direction)
     elsif space.enemy?
-      location_of_closest_enemy = space.location
+      most_recent_enemy = space.character
       warrior.attack!(direction)
     elsif space.empty?
       # May have just moved away from an enemy, so check if we should
       # re-engage.
-      if location_of_closest_enemy.nil?
+      if location_of_most_recent_enemy.nil?
         # No enemies, blithely continue
         warrior.walk!(direction)
       else
@@ -101,15 +101,16 @@ class Player
     puts "Moving toward safe space"
     if taking_damage_from_afar? and should_rest?
       # Move away from threat
-      @direction = away_from(location_of_closest_enemy)
+      @direction = away_from(location_of_most_recent_enemy)
     else
       reverse_direction!
     end
+    @direction = away_from(location_of_most_recent_enemy)
     @warrior.walk!(direction)
   end
 
   def move_toward_most_recent_enemy!
-    @direction = towards(location_of_closest_enemy)
+    @direction = towards(location_of_most_recent_enemy)
     @warrior.walk!(direction)
   end
 
@@ -186,8 +187,24 @@ class Player
     [x_coord, y_coord]
   end
 
-  def location_of_closest_enemy=(location)
+  def location_of_most_recent_enemy=(location)
     @enemy_location = location
+  end
+
+  def most_recent_enemy
+    @most_recent_enemy ||= nil
+    if taking_damage_from_afar?
+      @most_recent_enemy = :a
+    elsif next_to_enemy?
+      dir = DIRECTIONS.detect { |d| @warrior.feel(d).enemy? }
+      @most_recent_enemy = @warrior.feel(dir).character
+    end
+    @most_recent_enemy = @most_recent_enemy.to_sym unless @most_recent_enemy.nil?
+  end
+
+  # Pass in a character, e.g. "S" for a thick sludge.
+  def most_recent_enemy=(enemy)
+    @most_recent_enemy = enemy.to_sym
   end
 
   # UTILITY
@@ -199,7 +216,7 @@ class Player
   end
 
   # Pass in an enemy character, like "S", to determine how many turns it
-  # will take to kill it
+  # will take to kill it once you're next to it.
   def turns_required_to_beat(enemy)
     enemy = enemy.to_sym
     (ENEMY[enemy][:health].to_f / DAMAGE_DEALT).ceil
@@ -208,20 +225,22 @@ class Player
   # Do we have enough health to engage in battle?
   def healthy_enough_to_beat?(enemy)
     turns = turns_required_to_beat(enemy)
+    # Archers attack from a distance of 2 squares
+    turns += 2 if enemy == :a
     predicted_damage_taken = turns * ENEMY[enemy][:damage]
     predicted_damage_taken < current_health
   end
 
   # Returns location of closest enemy. May be nil.
-  def location_of_closest_enemy
+  def location_of_most_recent_enemy
     @enemy_location ||= nil
-    x,y = current_location
-    if taking_damage?
+    if next_to_enemy?
       dir = DIRECTIONS.detect{|d| @warrior.feel(d).enemy? }
       @enemy_location = @warrior.feel(dir).location
-    elsif taking_damage_from_afar? and just_started_taking_damage?
+    elsif most_recent_enemy == :a and just_started_taking_damage?
+      x,y = current_location
       # Archer is shooting at us. They have a range of 2 squares.
-      # i.e. |@  a| is sufficient
+      # i.e. |@  a| is sufficient for them to hit the warrior.
       @enemy_location = [x+3, y]
     end
     @enemy_location
