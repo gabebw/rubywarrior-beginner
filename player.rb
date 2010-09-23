@@ -1,19 +1,38 @@
 class Player
+  MAX_HEALTH = 20
   def play_turn(warrior)
-    @turn_number ||= 1
-    @turn_number += 1
-    percent_health = (warrior.health / 20.0) * 100
-    if warrior.feel.empty?
-      # @turn_number is a total hack to get more points - I know the way is clear
-      # after turn 20, so no resting there.
-      if percent_health <= 35 and @turn_number < 20
+    current_health = warrior.health
+    @previous_health ||= current_health
+    percent_health = (current_health.to_f / MAX_HEALTH) * 100
+    taking_damage = (current_health < @previous_health)
+    space = warrior.feel
+    if space.stairs?
+      warrior.walk!
+    elsif space.empty?
+      # warrior might be attacked even if space ahead is empty
+      # So if we're low on health and not taking damage, rest a bit.
+      if percent_health < 60 and not taking_damage and not space.stairs?
         # Regain some health
         warrior.rest!
       else
         warrior.walk!
       end
     else
-      warrior.attack!
+      if space.enemy?
+        warrior.attack!
+      end
     end
+    # available methods for a Space (returned by warrior.feel)
+    # stairs?
+    # empty?
+    # enemy?
+    # captive?
+    # wall?
+    # ticking? (OMINOUS!)
+    # Note that the stairs space is empty, i.e.
+    # if warrior.feel.stairs? is true, then warrior.feel.empty? is true too
+    #
+    # Set @previous_health for next turn
+    @previous_health = current_health
   end
 end
