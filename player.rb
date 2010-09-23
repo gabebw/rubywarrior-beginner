@@ -195,7 +195,7 @@ class Player
 
   def location_of_closest_enemy=(location)
     @enemy_location = location
-  endk
+  end
 
   # UTILITY
   def opposite_direction_of(dir)
@@ -243,6 +243,6 @@ class Player
 
   # Returns a direction that will bring the warrior farther away from the given location.
   def away_from(location)
-    opposite_direction_of(towards(location)
+    opposite_direction_of(towards(location))
   end
 end
