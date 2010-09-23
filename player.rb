@@ -1,26 +1,28 @@
 class Player
   MAX_HEALTH = 20
+  # When we have less than this % health, rest (unless we're not in a safe
+  # space)
+  MINIMUM_PERCENT_HEALTH = 70
   def play_turn(warrior)
-    current_health = warrior.health
+    @warrior = warrior
     @previous_health ||= current_health
-    percent_health = (current_health.to_f / MAX_HEALTH) * 100
     taking_damage = (current_health < @previous_health)
     space = warrior.feel
     if space.stairs?
       warrior.walk!
+    elsif space.captive?
+      warrior.rescue!
+    elsif space.enemy?
+      warrior.attack!
     elsif space.empty?
-      # warrior might be attacked even if space ahead is empty
-      # So if we're low on health and not taking damage, rest a bit.
-      if percent_health < 60 and not taking_damage and not space.stairs?
+      if should_rest?
         # Regain some health
         warrior.rest!
       else
         warrior.walk!
       end
     else
-      if space.enemy?
-        warrior.attack!
-      end
+      puts "Weird space: #{space.inspect}"
     end
     # available methods for a Space (returned by warrior.feel)
     # stairs?
@@ -34,5 +36,31 @@ class Player
     #
     # Set @previous_health for next turn
     @previous_health = current_health
+  end
+
+  # Is this space safe to rest in?
+  def in_safe_space?
+    space = @warrior.feel
+    (space.empty? or space.captive? or space.wall?)
+  end
+
+  # Should the warrior rest?
+  def should_rest?
+    in_safe_space? and low_on_health? and
+      not taking_damage? and # Not in danger
+      not @warrior.feel.stairs? # No need to rest when we're about to clear the level
+  end
+
+  def current_health
+    @warrior.health
+  end
+
+  def taking_damage?
+    taking_damage = (current_health < @previous_health)
+  end
+
+  def low_on_health?
+    percent_health = (current_health.to_f / MAX_HEALTH) * 100
+    percent_health < MINIMUM_PERCENT_HEALTH
   end
 end
