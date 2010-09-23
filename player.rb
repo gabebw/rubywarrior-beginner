@@ -179,13 +179,6 @@ class Player
     @direction ||= :backward
   end
 
-  # Returns direction of most recent enemy that the warrior engaged (or just
-  # took damage from), or nil if the warrior has yet to encounter an enemy
-  #def direction_of_most_recent_enemy
-    # Default to nil so we can tell when we have yet to engage an enemy
-  #  @direction_of_most_recent_enemy ||= nil
-  #end
-
   def current_location
     backward = @warrior.feel(:backward).location
     x_coord = backward[0] + 1
