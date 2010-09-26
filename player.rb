@@ -12,8 +12,10 @@ class Player
   def play_turn(warrior)
     # warrior.action returns [:latest_action, :direction_it_was_performed]
     @warrior = warrior
-    @previous_health ||= current_health
+    @previous_health ||= current_health # set first
     @previous_space ||= current_location
+    # If true, then rest until at max health before continuing
+    @recuperating ||= false
 
     perform_action!(warrior)
 
@@ -61,6 +63,7 @@ class Player
       else
         puts "Should rest, but not in safe space. Moving towards it."
         move_toward_safe_space!
+        @recuperating = true
       end
     elsif space.captive?
       warrior.rescue!(direction)
@@ -127,7 +130,7 @@ class Player
 
   # Is a given location safe?
   def is_safe_location?(location)
-    @safe_locations.include?(location)
+    @safe_locations and @safe_locations.include?(location)
   end
 
   # Should the warrior rest? Note that this doesn't take into account
@@ -135,7 +138,16 @@ class Player
   # should.
   def should_rest?
     # No need to rest when we're about to clear the level
-    low_on_health? and not @warrior.feel(direction).stairs?
+    return false if @warrior.feel(direction).stairs?
+    return false if @warrior.health == MAX_HEALTH
+
+    if @recuperating
+      # Stop recuperating if at max health
+      @recuperating = @warrior.health < MAX_HEALTH
+      return @recuperating
+    else
+      low_on_health?
+    end
   end
 
   # Is an enemy in an adjacent space?
