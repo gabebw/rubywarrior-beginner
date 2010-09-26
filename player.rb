@@ -16,6 +16,7 @@ class Player
     @previous_space ||= current_location
     # If true, then rest until at max health before continuing
     @recuperating ||= false
+    register_most_recent_enemy
 
     perform_action!(warrior)
 
@@ -69,7 +70,7 @@ class Player
       warrior.rescue!(direction)
     elsif space.enemy?
       most_recent_enemy = space.character
-      warrior.attack!(direction)
+      attack_enemy!(direction)
     elsif space.empty?
       # May have just moved away from an enemy, so check if we should
       # re-engage.
@@ -119,6 +120,14 @@ class Player
     @safe_locations << current_location unless @safe_locations.include?(current_location)
   end
 
+  # A wrapper around warrior.attack!(direction) so we can track an enemy's
+  # health.
+  def attack_enemy!(direction)
+    location = @warrior.feel(direction).location
+    decrement_most_recent_enemys_health_by(DAMAGE_DEALT)
+    @warrior.attack!(direction)
+  end
+
   ## TESTERS
 
   # Is this space safe to rest in?
@@ -145,6 +154,8 @@ class Player
       # Stop recuperating if at max health
       @recuperating = @warrior.health < MAX_HEALTH
       return @recuperating
+    elsif most_recent_enemy
+      not healthy_enough_to_beat_enemy_at?(get_most_recent_enemy_info[:location])
     else
       low_on_health?
     end
@@ -197,18 +208,19 @@ class Player
 
   def most_recent_enemy
     @most_recent_enemy ||= nil
+    new_enemy = nil
     if taking_damage_from_afar?
-      @most_recent_enemy = :a
+      new_enemy = :a
     elsif next_to_enemy?
       dir = DIRECTIONS.detect { |d| @warrior.feel(d).enemy? }
-      @most_recent_enemy = @warrior.feel(dir).character
+      new_enemy = @warrior.feel(dir).character
+    end
+    # Update only if we have a new enemy
+    if new_enemy
+      @most_recent_enemy = new_enemy
     end
     @most_recent_enemy = @most_recent_enemy.to_sym unless @most_recent_enemy.nil?
-  end
-
-  # Pass in a character, e.g. "S" for a thick sludge.
-  def most_recent_enemy=(enemy)
-    @most_recent_enemy = enemy.to_sym
+    @most_recent_enemy
   end
 
   # UTILITY
@@ -219,19 +231,23 @@ class Player
     end
   end
 
-  # Pass in an enemy character, like "S", to determine how many turns it
+  # Pass in an enemy location to determine how many turns it
   # will take to kill it once you're next to it.
-  def turns_required_to_beat(enemy)
-    enemy = enemy.to_sym
-    (ENEMY[enemy][:health].to_f / DAMAGE_DEALT).ceil
+  def turns_required_to_beat_enemy_at(enemy_location)
+    info = get_info_about_enemy_at(enemy_location)
+    turns = (info[:health].to_f / DAMAGE_DEALT).ceil
+    turns
   end
 
   # Do we have enough health to engage in battle?
-  def healthy_enough_to_beat?(enemy)
-    turns = turns_required_to_beat(enemy)
-    # Archers attack from a distance of 2 squares
-    turns += 2 if enemy == :a
-    predicted_damage_taken = turns * ENEMY[enemy][:damage]
+  def healthy_enough_to_beat_enemy_at?(enemy_location)
+    turns = turns_required_to_beat_enemy_at(enemy_location)
+    enemy_info = get_info_about_enemy_at(enemy_location)
+    # Archers attack from a distance of 2 squares, but if we're right next
+    # to them then we need fewer turns
+    turns += [2, get_distance_away(enemy_info[:location])].min if enemy_info[:character] == :a
+    puts "turns reqd: #{turns}"
+    predicted_damage_taken = turns * enemy_info[:damage]
     predicted_damage_taken < current_health
   end
 
@@ -260,5 +276,59 @@ class Player
   # Returns a direction that will bring the warrior farther away from the given location.
   def away_from(location)
     opposite_direction_of(towards(location))
+  end
+
+  # Register the most recent enemy. We need to keep track of their health!
+  def register_most_recent_enemy
+    # Map a specific enemy to its info
+    @enemies ||= {}
+    return if most_recent_enemy.nil?
+    info = get_most_recent_enemy_info
+    @enemies[info[:location]] ||= info
+  end
+
+  # Removes most recent enemy from @enemies hash
+  def unregister_most_recent_enemy!
+    info = get_most_recent_enemy_info
+    @enemies.delete(info[:location])
+  end
+
+  # Returns a Hash of info about most recent enemy. Hash is empty if
+  # no enemies have been encountered yet.
+  def get_most_recent_enemy_info
+    return {} if most_recent_enemy.nil?
+    info = {}
+    info[:location] = location_of_most_recent_enemy
+    info[:direction] = towards(info[:location])
+    info[:character] = most_recent_enemy
+    info.merge!(ENEMY[info[:character]])
+
+    info
+  end
+
+  # Decrement most recent enemy's health, unregistering them if they died.
+  def decrement_most_recent_enemys_health_by(amount)
+    register_most_recent_enemy
+    info = get_most_recent_enemy_info
+    @enemies[info[:location]][:health] -= amount
+    if @enemies[info[:location]][:health] <= 0
+      # Enemy died
+      unregister_most_recent_enemy!
+    end
+  end
+
+  # Get info about a specific enemy
+  def get_info_about_enemy_at(location)
+    @enemies ||= {}
+    @enemies[location]
+  end
+
+  # Get number of squares between warrior and given location
+  def get_distance_away(location)
+    target_x, target_y = location
+    current_x, current_y = current_location
+    distance = (((target_x - current_x).to_f ** 2) + ((target_y - current_y).to_f ** 2)) ** 0.5
+    distance = distance.ceil
+    distance - 1
   end
 end
