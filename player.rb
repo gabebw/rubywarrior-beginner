@@ -76,10 +76,6 @@ class Player
       else
         move_toward_most_recent_enemy!
       end
-    elsif taking_damage_from_afar? and should_rest?
-      puts "Should move away from threat"
-      # Move away from threat
-      move_toward_safe_space!
     elsif space.wall?
       # Hit a wall, switch direction and retry
       reverse_direction!
@@ -169,10 +165,6 @@ class Player
 
   def current_health
     @warrior.health
-  end
-
-  def current_turn
-    @current_turn ||= 1
   end
 
   # Get direction warrior is walking in. Defaults to :backward.
