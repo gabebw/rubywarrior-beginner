@@ -9,13 +9,24 @@ class Player
            :a => {:health => 7, :damage => 3}}
   DIRECTIONS = [:forward, :backward]
 
+  def set_variables!(warrior)
+    @warrior = warrior
+    @previous_health = current_health # set first
+    @previous_space = current_location
+    # If true, then rest until at max health before continuing
+    @recuperating = false
+    @safe_locations = []
+    @most_recent_enemy = nil
+    @enemy_location = nil
+    # Map a specific enemy to its info
+    @enemy_location_to_info = {}
+
+    @already_set_variables = true
+  end
+
   def play_turn(warrior)
     # warrior.action returns [:latest_action, :direction_it_was_performed]
-    @warrior = warrior
-    @previous_health ||= current_health # set first
-    @previous_space ||= current_location
-    # If true, then rest until at max health before continuing
-    @recuperating ||= false
+    set_variables! unless @already_set_variables
     register_most_recent_enemy
 
     perform_action!(warrior)
@@ -116,7 +127,6 @@ class Player
 
   # Mark the current location as safe
   def mark_safe_location!
-    @safe_locations ||= []
     @safe_locations << current_location unless @safe_locations.include?(current_location)
   end
 
@@ -207,7 +217,6 @@ class Player
   end
 
   def most_recent_enemy
-    @most_recent_enemy ||= nil
     new_enemy = nil
     if taking_damage_from_afar?
       new_enemy = :a
@@ -253,7 +262,6 @@ class Player
 
   # Returns location of closest enemy. May be nil.
   def location_of_most_recent_enemy
-    @enemy_location ||= nil
     if next_to_enemy?
       dir = DIRECTIONS.detect{|d| @warrior.feel(d).enemy? }
       @enemy_location = @warrior.feel(dir).location
@@ -280,17 +288,15 @@ class Player
 
   # Register the most recent enemy. We need to keep track of their health!
   def register_most_recent_enemy
-    # Map a specific enemy to its info
-    @enemies ||= {}
     return if most_recent_enemy.nil?
     info = get_most_recent_enemy_info
-    @enemies[info[:location]] ||= info
+    @enemy_location_to_info[info[:location]] ||= info
   end
 
-  # Removes most recent enemy from @enemies hash
+  # Removes most recent enemy from @enemy_location_to_info hash
   def unregister_most_recent_enemy!
     info = get_most_recent_enemy_info
-    @enemies.delete(info[:location])
+    @enemy_location_to_info.delete(info[:location])
   end
 
   # Returns a Hash of info about most recent enemy. Hash is empty if
@@ -310,8 +316,8 @@ class Player
   def decrement_most_recent_enemys_health_by(amount)
     register_most_recent_enemy
     info = get_most_recent_enemy_info
-    @enemies[info[:location]][:health] -= amount
-    if @enemies[info[:location]][:health] <= 0
+    @enemy_location_to_info[info[:location]][:health] -= amount
+    if @enemy_location_to_info[info[:location]][:health] <= 0
       # Enemy died
       unregister_most_recent_enemy!
     end
@@ -319,8 +325,7 @@ class Player
 
   # Get info about a specific enemy
   def get_info_about_enemy_at(location)
-    @enemies ||= {}
-    @enemies[location]
+    @enemy_location_to_info[location]
   end
 
   # Get number of squares between warrior and given location
