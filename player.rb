@@ -1,14 +1,11 @@
 require './map'
 class Player
-  # When we have less than this % health, rest (unless we're not in a safe
-  # space)
-
-  ATTACK_POWER = 5
-  MAX_HEALTH = 20
+  ATTACK_POWER = 5 # Damage warrior deals per turn
+  MAX_HEALTH = 20  # Maximum health of warrior
+  # We want to have at least this % health
   MINIMUM_PERCENT_HEALTH = 50
 
   def set_variables!(warrior)
-    @warrior = warrior
     @previous_health = current_health
     # If true, then rest until at max health before continuing
     @recuperating = false
@@ -21,9 +18,8 @@ class Player
   attr_accessor :direction
 
   def play_turn(warrior)
-    # warrior.action returns [:latest_action, :direction_it_was_performed]
-    set_variables!(warrior) unless @already_set_variables
     @warrior = warrior # yes, you have to set this each time
+    set_variables!(warrior) unless @already_set_variables
     @map.update!(warrior)
 
     perform_action!(warrior)
@@ -104,7 +100,9 @@ class Player
     end
   end
 
-  # STATE CHANGERS
+  ####################
+  #  STATE CHANGERS  #
+  ####################
 
   def reverse_direction!
     @direction = @map.opposite_direction_of(direction)
@@ -170,7 +168,9 @@ class Player
     percent_health < MINIMUM_PERCENT_HEALTH
   end
 
-  # ACCESSORS
+  ###############
+  #  ACCESSORS  #
+  ###############
 
   def current_health
     @warrior.health
@@ -181,7 +181,10 @@ class Player
     @direction ||= :backward
   end
 
-  # UTILITY
+  #############
+  #  UTILITY  #
+  #############
+
   # Pass in an enemy location to determine how many turns it
   # will take to kill it once you're next to it.
   def turns_required_to_beat_enemy_at(enemy_location)
