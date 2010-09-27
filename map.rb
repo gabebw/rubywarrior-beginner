@@ -17,7 +17,9 @@ class Map
     # A matrix of X columns by Y rows
     @map = {}
   end
-  attr_accessor :current_current_enemy_location, :previous_location, :just_killed_an_enemy
+  attr_accessor :current_current_enemy_location,
+                :previous_location,
+                :just_killed_an_enemy
 
   def update!(warrior)
     @warrior = warrior # yes, have to reset each time
@@ -28,8 +30,8 @@ class Map
       update_location(space.location, pretty_space(space))
     end
 
-    if @player.taking_damage_from_afar? and @player.just_started_taking_damage?
-      # Find a spot that's 2 away and is unknown
+    if @player.taking_damage_from_afar? and @player.just_started_taking_damage? and
+      @player.previous_direction != nil # is nil if called :rest previously, which has no direction
       delta = case @player.previous_direction
               when :forward then ARCHER_RANGE
               when :backward then ARCHER_RANGE * -1
@@ -47,6 +49,7 @@ class Map
     @map[x] ||= {}
     @map[x][y] = character
     if ENEMIES.key?(character)
+      register_enemy_at!(location, character)
       enemy_influence(location, character).each do |loc|
         mark_unsafe_location!(loc)
       end
@@ -113,7 +116,10 @@ class Map
 
   # Mark a given location as unsafe
   def mark_unsafe_location!(location)
-    @unsafe_locations << location unless @unsafe_locations.include?(location)
+    unless @unsafe_locations.include?(location) or # no duplicates
+      location[0] < 0 or location[1] < 0 # [0,0] is minimum
+      @unsafe_locations << location
+    end
   end
 
   # Mark a given location as safe. Since locations default to safe, this
@@ -180,62 +186,60 @@ class Map
     return {} if character.nil?
     info = {}
     info[:location] = location
-    info[:character] = character
+    info[:character] = character.to_sym
     info.merge!(ENEMIES[info[:character]])
     info
   end
 
   # Register the most recent enemy. We need to keep track of their health!
   def register_enemy_at!(location, character = nil)
+    # Don't re-register enemies
+    return if @enemy_location_to_info.key?(location)
+
     character ||= current_enemy_character
     info = create_enemy_info_hash(location, character)
     @enemy_location_to_info[location] = info
   end
 
   def location_of_closest_enemy
-    enemy_locations = @map.select { |x,y| @enemy_location_to_info.key?([x,y]) }
-    enemy_locations.min_by do |x,y|
-      get_distance_away([x,y])
+    enemy_locations = @map.select do |x,y_hash|
+      y = y_hash.keys.first
+      @enemy_location_to_info.key?([x,y])
     end
+    x, y_hash = enemy_locations.min_by do |x,y_hash|
+      y_hash.keys.min_by do |y|
+        get_distance_away([x,y])
+      end
+    end
+    [x, y_hash.keys.first]
   end
 
   def location_of_closest_safe_space
-    safe_locations = @map.reject { |x,y| @unsafe_locations.include?([x,y]) }
-    safe_locations.min_by do |x,y|
-      get_distance_away([x,y])
+    safe_locations = @map.select do |x,y_hash|
+      y = y_hash.keys.first
+      @unsafe_locations.include?([x,y])
     end
+    x, y_hash = safe_locations.min_by do |x,y_hash|
+      y_hash.keys.min_by do |y|
+        get_distance_away([x,y])
+      end
+    end
+    [x, y_hash.keys.first]
   end
 
-=begin
-  # Returns location of closest enemy. May be nil.
-  def location_of_current_enemy
-    if @player.next_to_enemy?
-      dir = DIRECTIONS.detect{|d| @warrior.feel(d).enemy? }
-      @current_enemy_location = @warrior.feel(dir).location
-    elsif current_enemy_character == :a and @player.just_started_taking_damage?
-      x,y = current_location_of_warrior
-      # Archer is shooting at us. They have a range of 2 squares.
-      # i.e. |@  a| is sufficient for them to hit the warrior.
-      @current_enemy_location = [x+ARCHER_RANGE, y]
-    end
-    @current_enemy_location
-  end
-=end
-
-  # Removes most recent enemy from @enemy_location_to_info hash
+  # Removes enemy at given location from @enemy_location_to_info hash.
   def unregister_enemy_at!(location)
     info = @enemy_location_to_info[location]
     # Mark all the locations that the enemy was attacking as safe.
     # This assumes that the enemy was the only thing attacking the locations
     # in its influence.
-    enemy_influence(info[:character]).each{|loc| mark_safe_location!(loc) }
+    enemy_influence(location, info[:character]).each{|loc| mark_safe_location!(loc) }
     @just_killed_an_enemy = true
     @enemy_location_to_info.delete(location)
   end
 
-  # Decrement most recent enemy's health, unregistering them if they died.
+  # Decrement the health of the enemy at the given location, unregistering them if they died.
   def decrement_enemys_health_at(location)
-    info = get_current_enemy_info
     @enemy_location_to_info[location][:health] -= Player::ATTACK_POWER
     if @enemy_location_to_info[location][:health] <= 0
       # Enemy died
